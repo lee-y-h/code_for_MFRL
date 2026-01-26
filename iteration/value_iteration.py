@@ -27,31 +27,31 @@ def main():
             A[(x, y)] = None
 
     # Value iteration
-    episode = params.MAX_EPISODE_STEPS
-    for _ in range(params.MAX_EPISODE_STEPS):  # arbitrary number of iterations
+    iterations = params.VALUE_ITERATION_MAX_ITERATE_STEPS
+    for it in range(params.VALUE_ITERATION_MAX_ITERATE_STEPS):  # arbitrary number of iterations
         V_new = {}
         for x in range(env.width):
             for y in range(env.height):
                 state = (x, y)
                 for action in env.ACTIONS.keys():
                     next_state, reward = env.get_next_state_and_reward(state, action)
-                    if V_new.get(state, float('-inf')) < reward + params.DISCOUNT_FACTOR * V[next_state]:
-                        V_new[state] = reward + params.DISCOUNT_FACTOR * V[next_state]
+                    if V_new.get(state, float('-inf')) < reward + params.VALUE_ITERATION_DISCOUNT_FACTOR * V[next_state]:
+                        V_new[state] = reward + params.VALUE_ITERATION_DISCOUNT_FACTOR * V[next_state]
                         A[state] = action
 
         # Check for convergence
         delta = max(abs(V[s] - V_new[s]) for s in V)
         V = V_new
         if delta < params.VALUE_ITERATION_THRESHOLD:
-            episode = _
+            iterations = it
             break
 
     if params.SHOW_GRID_WORLD:
         env.render(V, A, folder_path=str(project_root / 'renders' / 'value_iteration'),
-                   title=f'episode={episode}, '
+                   title=f'iteration={iterations}, '
                    +f'r_target={params.REWARD_TARGET}, '
                    +f'r_forbidden={params.REWARD_FORBIDDEN}, '
-                   +f'discount={params.DISCOUNT_FACTOR}'
+                   +f'discount={params.VALUE_ITERATION_DISCOUNT_FACTOR}'
                    )
 
 if __name__ == "__main__":
