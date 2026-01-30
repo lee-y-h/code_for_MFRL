@@ -1,11 +1,12 @@
-import params
+import random
 
 from pathlib import Path
 from datetime import datetime
 
 import matplotlib.pyplot as plt
-from matplotlib.patches import Rectangle
+from matplotlib.patches import Rectangle, Circle
 
+import params
 
 class GridWorld:
 
@@ -41,6 +42,20 @@ class GridWorld:
 
     def is_target(self, state):
         return state == self.target
+
+    def sample_state_action_pair(self):
+        """
+        Sample a random (state, action) pair from the grid world.
+
+        Returns: (state, action)
+        """
+        
+        x = random.randint(0, self.width - 1)
+        y = random.randint(0, self.height - 1)
+        state = (x, y)
+
+        action = random.choice(list(self.ACTIONS.keys()))
+        return state, action
 
     def get_next_state_and_reward(self, state, action):
         """
@@ -126,7 +141,11 @@ class GridWorld:
                         # scale arrow length
                         ax.arrow(x + 0.5 - 0.15 * dx, y + 0.5 - 0.15 * dy,
                                  0.3 * dx, 0.3 * dy,
-                                 head_width=0.12, head_length=0.12, fc='k', ec='k')
+                                 head_width=0.12, head_length=0.12, fc='green', ec='green')
+                    elif a == 5:
+                        # stay action: draw a small circle at the cell center
+                        circ = Circle((x + 0.5, y + 0.5), 0.18, edgecolor='green', facecolor='none', linewidth=1.2)
+                        ax.add_patch(circ)
 
         # Draw grid lines and styling
         ax.set_xlim(0, w)
