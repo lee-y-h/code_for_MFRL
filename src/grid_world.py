@@ -6,7 +6,6 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 from matplotlib.patches import Rectangle, Circle
 
-import params
 
 class GridWorld:
 
@@ -27,11 +26,34 @@ class GridWorld:
         5: (0, 0),   # stay
     }
 
-    def __init__(self, width, height, target, forbidden=None):
+    def __init__(self, width, height, target, forbidden=None, params_module=None):
+        """
+        GridWorld constructor.
+
+        If `params_module` is provided it should be a module-like object containing
+        REWARD_TARGET, REWARD_BOUNDARY, REWARD_FORBIDDEN, REWARD_STEP constants
+        (and any other parameters the caller needs). If not provided, the
+        top-level `params` module will be used.
+        """
         self.width = width
         self.height = height
         self.target = tuple(target)
         self.forbidden = [tuple(f) for f in (forbidden or [])]
+
+        # determine which params module to use
+        if params_module is None:
+            try:
+                import params as _params
+            except Exception:
+                _params = None
+        else:
+            _params = params_module
+
+        # Set reward constants on the instance, using defaults if missing
+        self.REWARD_TARGET = getattr(_params, 'REWARD_TARGET', 1)
+        self.REWARD_BOUNDARY = getattr(_params, 'REWARD_BOUNDARY', -1)
+        self.REWARD_FORBIDDEN = getattr(_params, 'REWARD_FORBIDDEN', -10)
+        self.REWARD_STEP = getattr(_params, 'REWARD_STEP', 0)
 
     def in_bounds(self, state):
         x, y = state
@@ -75,7 +97,7 @@ class GridWorld:
 
         if not self.in_bounds(candidate):
             next_state = (x, y)
-            reward = params.REWARD_BOUNDARY
+            reward = self.REWARD_BOUNDARY
             return next_state, reward
 
         # Otherwise move into candidate
@@ -83,11 +105,11 @@ class GridWorld:
 
         # Target / forbidden / step rewards
         if self.is_target(next_state):
-            reward = params.REWARD_TARGET
+            reward = self.REWARD_TARGET
         elif self.is_forbidden(next_state):
-            reward = params.REWARD_FORBIDDEN
+            reward = self.REWARD_FORBIDDEN
         else:
-            reward = params.REWARD_STEP
+            reward = self.REWARD_STEP
 
         return next_state, reward
     

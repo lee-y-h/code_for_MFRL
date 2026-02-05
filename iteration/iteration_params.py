@@ -1,0 +1,26 @@
+# Iteration-specific parameters
+
+# Grid world parameters
+GRID_SIZE = 5
+GOAL_POS = (2, 3)
+FORBIDDEN_CELLS = [(1, 1), (1, 3), (1, 4), (2, 1), (2, 2), (3, 3)]
+
+# Reward parameters
+REWARD_TARGET = 1
+REWARD_BOUNDARY = -1
+REWARD_FORBIDDEN = -1
+REWARD_STEP = 0
+
+# RL parameters
+SHOW_GRID_WORLD = True
+
+# Value Iteration parameters
+VALUE_ITERATION_DISCOUNT_FACTOR = 0.9
+VALUE_ITERATION_THRESHOLD = 1e-4
+VALUE_ITERATION_MAX_ITERATE_STEPS = 100
+
+# Policy Iteration parameters
+POLICY_ITERATION_DISCOUNT_FACTOR = 0.9
+POLICY_EVALUATION_THRESHOLD = 1e-4
+POLICY_EVALUATION_STEPS = 20
+POLICY_IMPROVEMENT_STEPS = 10

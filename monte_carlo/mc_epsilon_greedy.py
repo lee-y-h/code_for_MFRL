@@ -9,7 +9,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from src.grid_world import GridWorld
-import params
+from monte_carlo import monte_carlo_params as params
 
 def main():
     env = GridWorld(
@@ -17,12 +17,13 @@ def main():
         height=params.GRID_SIZE,
         target=params.GOAL_POS,
         forbidden=params.FORBIDDEN_CELLS,
+        params_module=params,
     )
 
     # initialization
     avg_return = {}
     return_counts = {}
-    A = {}  # most likely action under current policy (greedy)
+    most_likely_action = {}  # most likely action under current policy (greedy)
     policy_probs = {}  # distribution over actions per state
 
     n_actions = len(GridWorld.ACTIONS)
@@ -31,8 +32,6 @@ def main():
             state = (x, y)
             # uniform initial policy: each action has equal probability
             policy_probs[state] = {a: 1.0 / n_actions for a in env.ACTIONS.keys()}
-            # pick an arbitrary preferred action (will be updated during learning)
-            A[state] = next(iter(env.ACTIONS.keys()))
             for action in env.ACTIONS.keys():
                 avg_return[(state, action)] = 0
                 return_counts[(state, action)] = 0
@@ -78,21 +77,14 @@ def main():
                             best_value = avg_return[(state, action)]
                             best_action = action
                     if best_action is not None:
-                        A[state] = best_action
-                    # construct epsilon-greedy distribution from greedy action
-                    uniform_prob = eps / n_actions
-                    policy_probs[state] = {a: uniform_prob for a in env.ACTIONS.keys()}
-                    policy_probs[state][A[state]] += (1.0 - eps)
+                        most_likely_action[state] = best_action
+                        # construct epsilon-greedy distribution from greedy action
+                        uniform_prob = eps / n_actions
+                        policy_probs[state] = {a: uniform_prob for a in env.ACTIONS.keys()}
+                        policy_probs[state][most_likely_action[state]] += (1.0 - eps)
 
-        # convergence test on policy probabilities (L-inf over probs)
-        converged = True
-        for s in policy_probs:
-            for a in env.ACTIONS.keys():
-                diff = abs(policy_probs[s][a] - old_policy[s].get(a, 0.0))
-                if diff > 0:
-                    converged = False
-        
-        if converged:
+        # convergence test on policy probabilities
+        if policy_probs == old_policy:
             iterations = it
             break
 
@@ -109,7 +101,7 @@ def main():
                 state_values[state] += avg_return[(state, action)] * prob
 
     if params.SHOW_GRID_WORLD:
-        env.render(state_values, A, folder_path=str(project_root / "renders" / "mc_epsilon_greedy"),
+        env.render(state_values, most_likely_action, folder_path=str(project_root / "renders" / "mc_epsilon_greedy"),
                    title=f'iterations={iterations}, '
                    +f'episode={params.MC_EG_EPISODES}, '
                    +f'episode_length={params.MC_EG_EPISODE_LENGTH}, '

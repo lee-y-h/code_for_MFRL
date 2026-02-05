@@ -8,7 +8,7 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from src.grid_world import GridWorld
-import params
+from iteration import iteration_params as params
 
 def main():
     env = GridWorld(
@@ -16,6 +16,7 @@ def main():
         height=params.GRID_SIZE,
         target=params.GOAL_POS,
         forbidden=params.FORBIDDEN_CELLS,
+        params_module=params,
     )
 
     # Initialize policy
