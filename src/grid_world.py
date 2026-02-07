@@ -43,7 +43,7 @@ class GridWorld:
         # determine which params module to use
         if params_module is None:
             try:
-                import params as _params
+                import grid_world_params as _params
             except Exception:
                 _params = None
         else:
