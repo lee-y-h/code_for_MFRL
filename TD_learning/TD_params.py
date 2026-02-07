@@ -1,0 +1,31 @@
+# Grid world parameters
+GRID_SIZE = 5
+START_POS = (0, 0) # for TD learning
+TARGET_POS = (2, 3)
+FORBIDDEN_CELLS = [(1, 1), (1, 3), (1, 4), (2, 1), (2, 2), (3, 3)]
+
+# GRID_SIZE = 3
+# GOAL_POS = (2, 2)
+# FORBIDDEN_CELLS = [(0, 2), (2, 1)]
+
+# Reward parameters
+REWARD_TARGET = 0
+REWARD_BOUNDARY = -10
+REWARD_FORBIDDEN = -10
+REWARD_STEP = -1
+
+# RL parameters
+SHOW_GRID_WORLD = True
+
+# (n-step/Expected) Sarsa parameters
+SARSA_DISCOUNT_FACTOR = 0.9
+SARSA_ALPHA = 0.1
+SARSA_EPSILON = 0.1
+SARSA_N_STEPS = 1
+SARSA_EPISODES = 500
+
+# Q-learning parameters
+Q_LEARNING_DISCOUNT_FACTOR = 0.9
+Q_LEARNING_ALPHA = 0.1
+Q_LEARNING_EPISODES = 500
+Q_LEARNING_EPISODE_LENGTH = 200
