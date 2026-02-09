@@ -10,7 +10,6 @@ if str(project_root) not in sys.path:
 
 from src.grid_world import GridWorld
 from TD_learning import TD_params as params
-from src.plot_utils import plot_episode_lengths
 
 def main():
     env = GridWorld(
