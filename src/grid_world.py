@@ -113,6 +113,28 @@ class GridWorld:
 
         return next_state, reward
     
+    def generate_episode(self, start_state, policy_probs, max_length=100):
+        """
+        Generate an episode by following `policy_probs` starting from `start_state`.
+
+        - `policy_probs` is a dict mapping state -> action probabilities (dict).
+        - `max_length` is the maximum length of the episode (to prevent infinite loops).
+
+        Returns: list of (state, action, reward) tuples.
+        """
+        episode = []
+        current_state = start_state
+
+        for _ in range(max_length):
+            action = random.choices(list(self.ACTIONS.keys()), weights=policy_probs[current_state].values(), k=1)[0]
+            next_state, reward = self.get_next_state_and_reward(current_state, action)
+            episode.append((current_state, action, reward, next_state))
+            if self.is_target(next_state):
+                break
+            current_state = next_state
+
+        return episode
+
     def render(self, Values, Actions,
                 folder_path: str = 'grid_world',
                 title: str = 'GridWorld'):

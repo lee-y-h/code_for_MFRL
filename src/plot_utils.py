@@ -105,3 +105,44 @@ def plot_episode_stats(episode_lengths=None, total_rewards=None, out_dir='render
     out_path = out_dir / filename
     fig.savefig(out_path, bbox_inches='tight')
     plt.close(fig)
+
+
+def plot_loss(losses, out_dir='renders/plots', title=None, filename=None):
+    """Plot loss vs iteration and save to PNG.
+
+    Parameters:
+      - losses: iterable of loss values. Iteration index will be 1..len(losses).
+      - out_dir: output directory for PNG
+      - title: optional plot title
+      - filename: optional filename; auto-generated if None
+    """
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    if filename is None:
+        filename = f"loss_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+
+    vals = list(losses)
+    iters = list(range(1, len(vals) + 1))
+
+    fig, ax = plt.subplots(figsize=(8, 4))
+    ax.plot(iters, vals, marker='o', markersize=3, linewidth=1, color='C2')
+    ax.set_xlabel('Iteration')
+    ax.set_ylabel('Loss')
+    if title:
+        ax.set_title(title)
+    ax.grid(True)
+
+    # set reasonable x-ticks (up to 10, include last)
+    if iters:
+        max_ticks = min(10, len(iters))
+        step = max(1, len(iters) // max_ticks)
+        xt = list(range(iters[0], iters[-1] + 1, step))
+        if xt[-1] != iters[-1]:
+            xt.append(iters[-1])
+        ax.set_xticks(xt)
+
+    fig.tight_layout()
+    out_path = out_dir / filename
+    fig.savefig(out_path, bbox_inches='tight')
+    plt.close(fig)
