@@ -40,6 +40,9 @@ class GridWorld:
         self.target = tuple(target)
         self.forbidden = [tuple(f) for f in (forbidden or [])]
 
+        self.states = [(x, y) for x in range(self.width) for y in range(self.height)]
+        self.actions = list(self.ACTIONS.keys())
+
         # determine which params module to use
         if params_module is None:
             try:
