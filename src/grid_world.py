@@ -140,7 +140,8 @@ class GridWorld:
 
     def render(self, Values, Actions,
                 folder_path: str = 'grid_world',
-                title: str = 'GridWorld'):
+                title: str = 'GridWorld',
+                file_name: str = ''):
         """
         Render the grid as an image and save it to a `renders/<folder_name>` folder
 
@@ -208,7 +209,10 @@ class GridWorld:
         ax.set_title(title)
 
         # Save file
-        fname = out_dir / f"{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.png"
+        if file_name == '':
+            fname = out_dir / f"{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.png"
+        else:
+            fname = out_dir / f"{file_name}.png"
         fig.savefig(str(fname), bbox_inches='tight')
         plt.close(fig)
         return str(fname)

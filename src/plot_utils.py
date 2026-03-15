@@ -107,7 +107,7 @@ def plot_episode_stats(episode_lengths=None, total_rewards=None, out_dir='render
     plt.close(fig)
 
 
-def plot_loss(losses, out_dir='renders/plots', title=None, filename=None):
+def plot_loss(losses, out_dir='renders/plots', title=None, file_name=None):
     """Plot loss vs iteration and save to PNG.
 
     Parameters:
@@ -119,8 +119,10 @@ def plot_loss(losses, out_dir='renders/plots', title=None, filename=None):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    if filename is None:
-        filename = f"loss_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+    if file_name is None:
+        file_name = f"loss_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
+    else:
+        file_name = f"{file_name}.png"
 
     vals = list(losses)
     iters = list(range(1, len(vals) + 1))
@@ -143,6 +145,6 @@ def plot_loss(losses, out_dir='renders/plots', title=None, filename=None):
         ax.set_xticks(xt)
 
     fig.tight_layout()
-    out_path = out_dir / filename
+    out_path = out_dir / file_name
     fig.savefig(out_path, bbox_inches='tight')
     plt.close(fig)

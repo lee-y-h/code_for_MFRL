@@ -172,7 +172,7 @@ def main():
 
     if params.SHOW_GRID_WORLD:            
         plot_loss(loss_record, out_dir=folder_path,
-                title="DQN Loss Curve", filename="loss_curve.png"
+                title="DQN Loss Curve", file_name="loss_curve.png"
                 )
         
 if __name__ == "__main__":

@@ -79,7 +79,7 @@ class REINFORCE:
             while not done and step < episode_max_len:
                 step += 1
                 logits = self.PI_net(state_tensor)
-                action_probs = torch.softmax(logits, dim=0)
+                action_probs = torch.softmax(logits, dim=-1)
                 action_dist = torch.distributions.Categorical(action_probs)
                 action_index = action_dist.sample().item()
                 action = self.actions[int(action_index)]
@@ -135,7 +135,7 @@ class REINFORCE:
 
     def plot_loss_(self, loss_record):
         plot_loss(loss_record, self.folder_path, 
-                  title="REINFORCE Loss Curve", filename="loss_curve.png")
+                  title="REINFORCE Loss Curve", file_name="loss_curve.png")
 
 if __name__ == "__main__":
     reinforce = REINFORCE(params.REINFORCE_SEED)
