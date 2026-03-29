@@ -11,78 +11,62 @@ if str(project_root) not in sys.path:
 from src.grid_world import GridWorld
 from TD_learning import TD_params as params
 
-def main():
-    env = GridWorld(
-        width=params.GRID_SIZE,
-        height=params.GRID_SIZE,
-        target=params.TARGET_POS,
-        forbidden=params.FORBIDDEN_CELLS,
-        params_module=params,
-    )
+class QLearning:
+    def __init__(self):
+        self.env = GridWorld(width=params.GRID_SIZE, height=params.GRID_SIZE,
+            target=params.TARGET_POS, forbidden=params.FORBIDDEN_CELLS, params_module=params)
 
-    # initialization
-    Q = {}
-    behavior_policy_probs = {}
-    target_policy = {}  # greedy policy
+        self.states = self.env.states
+        self.actions = self.env.actions
 
-    n_actions = len(GridWorld.ACTIONS)
+        self.alpha = params.Q_LEARNING_ALPHA
+        self.gamma = params.Q_LEARNING_DISCOUNT_FACTOR
 
-    for x in range(env.width):
-        for y in range(env.height):
-            state = (x, y)
-            Q[state] = {a: 0.0 for a in env.ACTIONS.keys()}
-            behavior_policy_probs[state] = {a: 1.0 / n_actions for a in env.ACTIONS.keys()}
+        n_actions = len(self.actions)
+        self.qvalues = {state: {action: 0.0 for action in self.actions} for state in self.states}
+        self.behavior_policy_probs = {
+            state: {action: 1.0 / n_actions for action in self.actions}
+            for state in self.states
+        }
+        self.target_policy = {state: self.actions[0] for state in self.states}
+        self.values = {state: 0.0 for state in self.states}
 
-    # Q-learning (off-policy)
+    def solve(self, episodes, episode_length):
+        for _ in range(episodes):
+            state_t = self.env.reset(params.START_POS)
 
-    for _ in range(params.Q_LEARNING_EPISODES):
-        state_t = params.START_POS
+            for _ in range(episode_length):
+                probs = self.behavior_policy_probs[state_t]
+                actions = list(probs.keys())
+                weights = [probs[action] for action in actions]
+                action_t = random.choices(actions, weights=weights, k=1)[0]
 
-        for _ in range(params.Q_LEARNING_EPISODE_LENGTH):
-            probs = behavior_policy_probs[state_t]
-            actions = list(probs.keys())
-            weights = [probs[a] for a in actions]
-            action_t = random.choices(actions, weights=weights, k=1)[0]
+                state_t1, reward, _ = self.env.step(action_t)
 
-            state_t1, reward = env.get_next_state_and_reward(state_t, action_t)
+                best_next_q = max(self.qvalues[state_t1][action] for action in self.actions)
+                self.qvalues[state_t][action_t] += self.alpha * (
+                    reward + self.gamma * best_next_q - self.qvalues[state_t][action_t]
+                )
 
-            # Update action value
-            best_next_q = max(Q[state_t1][a] for a in env.ACTIONS.keys())
-            Q[state_t][action_t] += params.Q_LEARNING_ALPHA * (
-                reward + params.Q_LEARNING_DISCOUNT_FACTOR * best_next_q - Q[state_t][action_t]
-            )
+                self.target_policy[state_t] = max(self.qvalues[state_t], key=lambda action: self.qvalues[state_t][action])
+                state_t = state_t1
 
-            # Update target policy 
-            max_q = float('-inf')
-            best_action = None
-            for action, q in Q[state_t].items():
-                if q > max_q:
-                    max_q = q
-                    best_action = action
+        for state in self.states:
+            self.values[state] = self.qvalues[state][self.target_policy[state]]
 
-            target_policy[state_t] = best_action
-
-            state_t = state_t1
-
-    if params.SHOW_GRID_WORLD:
-        # calculate state values under the target policy
-        state_value = {}
-        for x in range(env.width):
-            for y in range(env.height):
-                state = (x, y)
-                best_action = target_policy.get(state, None)
-                if best_action is not None:
-                    state_value[state] = Q[state][best_action]
-                else:
-                    state_value[state] = 0
-        
-        env.render(state_value, target_policy, folder_path=str(project_root / "renders" / "q_learning"),
-                   title=f'episodes={params.Q_LEARNING_EPISODES}, '
+        if params.SHOW_GRID_WORLD:
+            self.env.render(self.values, self.target_policy, folder_path=str(project_root / "renders" / "q_learning"),
+                title=f'episodes={params.Q_LEARNING_EPISODES}, '
                     +f'episode_length={params.Q_LEARNING_EPISODE_LENGTH}, '
                     +f'alpha={params.Q_LEARNING_ALPHA}, '
                     +f'discount={params.Q_LEARNING_DISCOUNT_FACTOR}'
-                    )
-        
+            )
+
+
 if __name__ == "__main__":
-    main()
+    ql = QLearning()
+    ql.solve(
+        episodes=params.Q_LEARNING_EPISODES,
+        episode_length=params.Q_LEARNING_EPISODE_LENGTH,
+    )
                         

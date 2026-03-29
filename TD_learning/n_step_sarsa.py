@@ -12,114 +12,115 @@ from src.grid_world import GridWorld
 from TD_learning import TD_params as params
 from src.plot_utils import plot_episode_stats
 
-def main():
-    env = GridWorld(
-        width=params.GRID_SIZE,
-        height=params.GRID_SIZE,
-        target=params.TARGET_POS,
-        forbidden=params.FORBIDDEN_CELLS,
-        params_module=params,
-    )
+class NStepSarsa:
+    def __init__(self):
+        self.env = GridWorld(width=params.GRID_SIZE, height=params.GRID_SIZE,
+            target=params.TARGET_POS, forbidden=params.FORBIDDEN_CELLS, params_module=params)
 
-    # initialization
-    Q = {}
-    most_likely_action = {}
-    policy_probs = {}
-    episode_length = []
-    total_reward = []
-    
-    n_actions = len(GridWorld.ACTIONS)
-    n_steps = params.SARSA_N_STEPS
+        self.states = self.env.states
+        self.actions = self.env.actions
+        self.n_actions = len(self.actions)
 
-    for x in range(env.width):
-        for y in range(env.height):
-            state = (x, y)
-            Q[state] = {a: 0.0 for a in env.ACTIONS.keys()} # Q[target] should be zero
-            policy_probs[state] = {a: 1.0 / n_actions for a in env.ACTIONS.keys()}
+        self.alpha = params.SARSA_ALPHA
+        self.gamma = params.SARSA_DISCOUNT_FACTOR
+        self.epsilon = params.SARSA_EPSILON
+        self.n_steps = params.SARSA_N_STEPS
 
-    policy_probs[params.TARGET_POS] = {a: 0.0 for a in env.ACTIONS.keys()}
-    policy_probs[params.TARGET_POS][5] = 1.0  # stay at target
+        self.state_values = {state: 0.0 for state in self.states}
+        self.qvalues = {state: {action: 0.0 for action in self.actions} for state in self.states}
+        self.policy_probs = {
+            state: {action: 1.0 / self.n_actions for action in self.actions}
+            for state in self.states
+        }
+        self.policy_probs[params.TARGET_POS] = {action: 0.0 for action in self.actions}
+        self.policy_probs[params.TARGET_POS][5] = 1.0
 
-    # n-step Sarsa
-    for _ in range(params.SARSA_EPISODES):
-        step = 0    # time step
-        reward_sum = 0
-        state_t = params.START_POS
-        probs = policy_probs[state_t]
+        self.policy = {state: self.actions[0] for state in self.states}
+        self.episode_lengths = []
+        self.total_rewards = []
+
+    def _sample_action(self, state):
+        probs = self.policy_probs[state]
         actions = list(probs.keys())
-        weights = [probs[a] for a in actions]
-        action_t = random.choices(actions, weights=weights, k=1)[0]
+        weights = [probs[action] for action in actions]
+        return random.choices(actions, weights=weights, k=1)[0]
 
-        states_list = [state_t]
-        actions_list = [action_t]
-        rewards = [0]  # reward at time t=0 is unused
+    def _update_epsilon_greedy_policy(self, state):
+        n_actions = len(self.actions)
+        max_q = max(self.qvalues[state].values())
+        best_actions = [action for action, q in self.qvalues[state].items() if q == max_q]
+        n_best = len(best_actions)
 
-        while not env.is_target(state_t):
-            step += 1
-            state_t1, reward = env.get_next_state_and_reward(state_t, action_t)
-            reward_sum += reward
-            states_list.append(state_t1)
-            rewards.append(reward)
+        for action in self.actions:
+            self.policy_probs[state][action] = self.epsilon / n_actions
+        if n_best > 0:
+            add = (1.0 - self.epsilon) / n_best
+            for action in best_actions:
+                self.policy_probs[state][action] += add
 
-            probs = policy_probs[state_t1]
-            actions = list(probs.keys())
-            weights = [probs[a] for a in actions]
-            action_t1 = random.choices(actions, weights=weights, k=1)[0]
-            actions_list.append(action_t1)
+    def solve(self, episodes):
+        max_steps = params.SARSA_N_MAX_EPISODE_LENGTH
 
-            tau = step - n_steps    # tau is the time whose estimate is being updated
-            if tau >= 0:
-                G = Q[states_list[step]][actions_list[step]]
-                for t in reversed(range(tau + 1, step + 1)):
-                    G = rewards[t] + params.SARSA_DISCOUNT_FACTOR * G
+        for _ in range(episodes):
+            step = 0
+            reward_sum = 0.0
+            state_t = self.env.reset(params.START_POS)
+            action_t = self._sample_action(state_t)
 
-                state_tau = states_list[tau]
-                action_tau = actions_list[tau]
-                Q[state_tau][action_tau] += params.SARSA_ALPHA * (G - Q[state_tau][action_tau])
+            states_list = [state_t]
+            actions_list = [action_t]
+            rewards = [0.0]  # R_0 is unused; rewards are stored as R_{t+1}
+            done = False
 
-                # Update policy
-                max_q = max(Q[state_t].values())
-                best_actions = [a for a, q in Q[state_t].items() if q == max_q]
-                n_best = len(best_actions)
-                for a in env.ACTIONS.keys():
-                    policy_probs[state_t][a] = params.SARSA_EPSILON / n_actions
-                if n_best > 0:
-                    add = (1.0 - params.SARSA_EPSILON) / n_best
-                    for a in best_actions:
-                        policy_probs[state_t][a] += add
+            while not done and step < max_steps:
+                step += 1
+                state_t1, reward, done = self.env.step(action_t)
+                reward_sum += reward
+                states_list.append(state_t1)
+                rewards.append(reward)
 
-            state_t = state_t1
-            action_t = action_t1
+                action_t1 = self._sample_action(state_t1)
+                actions_list.append(action_t1)
 
-        episode_length.append(step)
-        total_reward.append(reward_sum)
+                tau = step - self.n_steps
+                if tau >= 0:
+                    if not done:
+                        g_return = self.qvalues[states_list[step]][actions_list[step]]
+                    else:
+                        g_return = 0.0
 
-    if params.SHOW_GRID_WORLD:
-        # compute most likely action and state-value function
-        for x in range(env.width):
-            for y in range(env.height):
-                state = (x, y)
-                best_action = None
-                best_prob = float('-inf')
-                for action, prob in policy_probs[state].items():
-                    if prob > best_prob:
-                        best_prob = prob
-                        best_action = action
-                most_likely_action[state] = best_action
+                    for t in reversed(range(tau + 1, step + 1)):
+                        g_return = rewards[t] + self.gamma * g_return
 
-        env.render(None, most_likely_action, folder_path=str(project_root / "renders" / "n_step_sarsa"),
-                   title=f'episodes={params.SARSA_EPISODES}, n={n_steps}, '
-                   +f'alpha={params.SARSA_ALPHA}, '
-                   +f'eps={params.SARSA_EPSILON}, '
-                   +f'discount={params.SARSA_DISCOUNT_FACTOR}'
-                   )
-        
-        # plot episode lengths and total rewards over episodes
-        plot_episode_stats(
-                episode_length,
-                total_reward,
+                    state_tau = states_list[tau]
+                    action_tau = actions_list[tau]
+                    self.qvalues[state_tau][action_tau] += self.alpha * (g_return - self.qvalues[state_tau][action_tau])
+                    self._update_epsilon_greedy_policy(state_tau)
+
+                state_t = state_t1
+                action_t = action_t1
+
+            self.episode_lengths.append(step)
+            self.total_rewards.append(reward_sum)
+
+        for state in self.states:
+            self.state_values[state] = max(self.qvalues[state].values())
+            self.policy[state] = max(self.qvalues[state], key=lambda action: self.qvalues[state][action])
+
+        if params.SHOW_GRID_WORLD:
+            self.env.render(self.state_values, self.policy, folder_path=str(project_root / "renders" / "n_step_sarsa"),
+                title=f'episodes={params.SARSA_N_EPISODES}, n={self.n_steps}, '
+                    +f'alpha={params.SARSA_ALPHA}, '
+                    +f'eps={params.SARSA_EPSILON}, '
+                    +f'discount={params.SARSA_DISCOUNT_FACTOR}'
+            )
+
+            plot_episode_stats(
+                self.episode_lengths,
+                self.total_rewards,
                 out_dir=str(project_root / "renders" / "n_step_sarsa"),
             )
         
 if __name__ == "__main__":
-    main()
+    n_step_sarsa = NStepSarsa()
+    n_step_sarsa.solve(episodes=params.SARSA_N_EPISODES)

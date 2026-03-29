@@ -11,104 +11,82 @@ if str(project_root) not in sys.path:
 from src.grid_world import GridWorld
 from monte_carlo import monte_carlo_params as params
 
-def main():
-    env = GridWorld(
-        width=params.GRID_SIZE,
-        height=params.GRID_SIZE,
-        target=params.GOAL_POS,
-        forbidden=params.FORBIDDEN_CELLS,
-        params_module=params,
-    )
+class MCEpsilonGreedy:
+    def __init__(self):
+        self.env = GridWorld(width=params.GRID_SIZE, height=params.GRID_SIZE,
+            target=params.GOAL_POS, forbidden=params.FORBIDDEN_CELLS, params_module=params)
 
-    # initialization
-    avg_return = {}
-    return_counts = {}
-    most_likely_action = {}  # most likely action under current policy (greedy)
-    policy_probs = {}  # distribution over actions per state
+        self.states = self.env.states
+        self.actions = self.env.actions
+        self.n_actions = len(self.actions)
 
-    n_actions = len(GridWorld.ACTIONS)
-    for x in range(env.width):
-        for y in range(env.height):
-            state = (x, y)
-            # uniform initial policy: each action has equal probability
-            policy_probs[state] = {a: 1.0 / n_actions for a in env.ACTIONS.keys()}
-            for action in env.ACTIONS.keys():
-                avg_return[(state, action)] = 0
-                return_counts[(state, action)] = 0
-    
-    # Monte Carlo Epsilon-Greedy
-    eps = params.MC_EG_EPSILON
-    iterations = params.MC_EG_MAX_ITERATE_STEPS
-    for it in range(params.MC_EG_MAX_ITERATE_STEPS):
-        # copy old policy probabilities for convergence test
-        old_policy = {s: policy_probs[s].copy() for s in policy_probs}
-        for _ in range(params.MC_EG_EPISODES):
-            episode = []
-            state, action = env.sample_state_action_pair()
-            next_state, reward = env.get_next_state_and_reward(state, action)
-            episode.append((state, action, reward))
-            current_state = next_state
-            for _ in range(params.MC_EG_EPISODE_LENGTH - 1):
-                # sample action directly from the current policy probabilities
-                probs = policy_probs[current_state]
-                actions = list(probs.keys())
-                weights = [probs[a] for a in actions]
-                current_action = random.choices(actions, weights=weights, k=1)[0]
-                next_state, reward = env.get_next_state_and_reward(current_state, current_action)
-                episode.append((current_state, current_action, reward))
-                current_state = next_state
-            
-            # Every-visit strategy
-            G = 0
-            for state, action, reward in reversed(episode):
-                G = params.MC_EG_DISCOUNT_FACTOR * G + reward
-                return_counts[(state, action)] += 1
-                alpha = 1 / return_counts[(state, action)]
-                avg_return[(state, action)] += (G - avg_return[(state, action)]) * alpha
-        
-            # Update policy based on average returns
-            for x in range(env.width):
-                for y in range(env.height):
-                    state = (x, y)
-                    best_action = None
-                    best_value = float('-inf')
-                    for action in env.ACTIONS.keys():
-                        if return_counts[(state, action)] != 0 and avg_return[(state, action)] > best_value:
-                            best_value = avg_return[(state, action)]
-                            best_action = action
-                    if best_action is not None:
-                        most_likely_action[state] = best_action
-                        # construct epsilon-greedy distribution from greedy action
-                        uniform_prob = eps / n_actions
-                        policy_probs[state] = {a: uniform_prob for a in env.ACTIONS.keys()}
-                        policy_probs[state][most_likely_action[state]] += (1.0 - eps)
+        self.gamma = params.MC_EG_DISCOUNT_FACTOR
 
-        # convergence test on policy probabilities
-        if policy_probs == old_policy:
-            iterations = it
-            break
+        self.avg_return = {(state, action): 0.0 for state in self.states for action in self.actions}
+        self.return_counts = {(state, action): 0 for state in self.states for action in self.actions}
+        self.policy = {state: self.actions[0] for state in self.states}  # greedy action under epsilon-greedy policy
+        self.policy_probs = {state: {} for state in self.states}  # action probabilities per state
+        self.values = {state: 0.0 for state in self.states}
 
-    # calculate state value
-    state_values = {}
-    for x in range(env.width):
-        for y in range(env.height):
-            state = (x, y)
-            state_values[state] = 0
-            # expected value under learned policy probabilities; skip unvisited actions
-            for action, prob in policy_probs[state].items():
-                if return_counts.get((state, action), 0) == 0:
+    def solve(self, max_iterations, episodes, episode_length, epsilon):
+        self.policy_probs = {
+            state: {action: 1.0 / self.n_actions for action in self.actions}
+            for state in self.states
+        }
+
+        for _ in range(max_iterations):
+            for _ in range(episodes):
+                # Start each episode with a random state-action pair to ensure exploration
+                state, action = self.env.sample_state_action_pair()
+                episode = self.env.generate_stochastic_episode(state, self.policy_probs, episode_length, action=action)
+
+                # Calculate returns and update action-value estimates
+                discounted_return = 0.0
+                for state_t, action_t, reward_t, _, _ in reversed(episode):
+                    discounted_return = self.gamma * discounted_return + reward_t
+                    self.return_counts[(state_t, action_t)] += 1
+                    alpha = 1.0 / self.return_counts[(state_t, action_t)]
+                    self.avg_return[(state_t, action_t)] += (discounted_return - self.avg_return[(state_t, action_t)]) * alpha
+
+                # Update epsilon-greedy policy
+                for state_t in self.states:
+                    visited_actions = [a for a in self.actions if self.return_counts[(state_t, a)] > 0]
+                    if not visited_actions:
+                        continue
+
+                    qvalues = {a: self.avg_return[(state_t, a)] for a in visited_actions}
+                    self.policy[state_t] = max(qvalues, key=lambda act: qvalues[act])
+
+                    uniform_prob = epsilon / self.n_actions
+                    self.policy_probs[state_t] = {a: uniform_prob for a in self.actions}
+                    self.policy_probs[state_t][self.policy[state_t]] += (1.0 - epsilon)
+
+        # Calculate state values under the final epsilon-greedy policy
+        for state in self.states:
+            state_value = 0.0
+            for action, prob in self.policy_probs[state].items():
+                if self.return_counts[(state, action)] == 0:
                     continue
-                state_values[state] += avg_return[(state, action)] * prob
+                state_value += self.avg_return[(state, action)] * prob
+            self.values[state] = state_value
 
-    if params.SHOW_GRID_WORLD:
-        env.render(state_values, most_likely_action, folder_path=str(project_root / "renders" / "mc_epsilon_greedy"),
-                   title=f'iterations={iterations}, '
-                   +f'episode={params.MC_EG_EPISODES}, '
-                   +f'episode_length={params.MC_EG_EPISODE_LENGTH}, '
-                   +f'epsilon={params.MC_EG_EPSILON}, '
-                   +f'r_forbidden={params.REWARD_FORBIDDEN}, '
-                   +f'r_target={params.REWARD_TARGET}, '
-                   +f'discount={params.MC_EG_DISCOUNT_FACTOR}')
-        
+        if params.SHOW_GRID_WORLD:
+            self.env.render(self.values, self.policy, folder_path=str(project_root / "renders" / "mc_epsilon_greedy"),
+                title=f'iterations={max_iterations}, '
+                +f'episode={params.MC_EG_EPISODES}, '
+                +f'episode_length={params.MC_EG_EPISODE_LENGTH}, '
+                +f'epsilon={params.MC_EG_EPSILON}, '
+                +f'r_forbidden={params.REWARD_FORBIDDEN}, '
+                +f'r_target={params.REWARD_TARGET}, '
+                +f'discount={params.MC_EG_DISCOUNT_FACTOR}'
+            )
+
+
 if __name__ == "__main__":
-    main()
+    mc = MCEpsilonGreedy()
+    mc.solve(
+        max_iterations=params.MC_EG_MAX_ITERATE_STEPS,
+        episodes=params.MC_EG_EPISODES,
+        episode_length=params.MC_EG_EPISODE_LENGTH,
+        epsilon=params.MC_EG_EPSILON
+    )

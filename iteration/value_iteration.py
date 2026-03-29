@@ -10,50 +10,54 @@ if str(project_root) not in sys.path:
 from src.grid_world import GridWorld
 from iteration import iteration_params as params
 
-def main():
-    env = GridWorld(
-        width=params.GRID_SIZE,
-        height=params.GRID_SIZE,
-        target=params.GOAL_POS,
-        forbidden=params.FORBIDDEN_CELLS,
-        params_module=params,
-    )
+class ValueIteration:
+    def __init__(self):
+        self.env = GridWorld(width=params.GRID_SIZE, height=params.GRID_SIZE,
+            target=params.GOAL_POS, forbidden=params.FORBIDDEN_CELLS, params_module=params)
+        
+        self.states = self.env.states
+        self.actions = self.env.actions
 
-    # Initialize value function
-    V = {}
-    A = {}
-    for x in range(env.width):
-        for y in range(env.height):
-            V[(x, y)] = 0
-            A[(x, y)] = None
+        self.gamma = params.VALUE_ITERATION_DISCOUNT_FACTOR
 
-    # Value iteration
-    iterations = params.VALUE_ITERATION_MAX_ITERATE_STEPS
-    for it in range(params.VALUE_ITERATION_MAX_ITERATE_STEPS):  # arbitrary number of iterations
-        V_new = {}
-        for x in range(env.width):
-            for y in range(env.height):
-                state = (x, y)
-                for action in env.ACTIONS.keys():
-                    next_state, reward = env.get_next_state_and_reward(state, action)
-                    if V_new.get(state, float('-inf')) < reward + params.VALUE_ITERATION_DISCOUNT_FACTOR * V[next_state]:
-                        V_new[state] = reward + params.VALUE_ITERATION_DISCOUNT_FACTOR * V[next_state]
-                        A[state] = action
+        self.values = {state: 0.0 for state in self.states}  # Initialize value
+        self.policy = {state: self.actions[0] for state in self.states}  # Initialize policy
+        
+    def solve(self, max_iterations, threshold):
 
-        # Check for convergence
-        delta = max(abs(V[s] - V_new[s]) for s in V)
-        V = V_new
-        if delta < params.VALUE_ITERATION_THRESHOLD:
-            iterations = it
-            break
+        self.values = {state: 0.0 for state in self.states}  # Initialize value
+        
+        # Value iteration
+        iterations = max_iterations
+        for it in range(1, max_iterations + 1):
+            v_t1 = {state: 0.0 for state in self.states}  # Initialize new value
+            for state in self.states:
+                qvalues = {action: 0.0 for action in self.actions}  # Initialize q-values
+                for action in self.actions:
+                    next_state, reward = self.env.get_next_state_and_reward(state, action)
+                    qvalues[action] = reward + self.gamma * self.values[next_state]
 
-    if params.SHOW_GRID_WORLD:
-        env.render(V, A, folder_path=str(project_root / 'renders' / 'value_iteration'),
-                   title=f'iteration={iterations}, '
-                   +f'r_target={params.REWARD_TARGET}, '
-                   +f'r_forbidden={params.REWARD_FORBIDDEN}, '
-                   +f'discount={params.VALUE_ITERATION_DISCOUNT_FACTOR}'
-                   )
+                self.policy[state] = max(qvalues, key=lambda action: qvalues[action])
+                v_t1[state] = qvalues[self.policy[state]]
+
+            # Check for convergence
+            delta = max(abs(self.values[s] - v_t1[s]) for s in self.values)
+            self.values = v_t1
+            if delta < threshold:
+                iterations = it
+                break
+
+        if params.SHOW_GRID_WORLD:
+            self.env.render(self.values, self.policy, folder_path=str(project_root / 'renders' / 'value_iteration'),
+                    title=f'iteration={iterations}, '
+                    +f'r_target={params.REWARD_TARGET}, '
+                    +f'r_forbidden={params.REWARD_FORBIDDEN}, '
+                    +f'discount={params.VALUE_ITERATION_DISCOUNT_FACTOR}'
+                    )
 
 if __name__ == "__main__":
-    main()
+    vi = ValueIteration()
+    vi.solve(
+        max_iterations=params.VALUE_ITERATION_MAX_ITERATE_STEPS,
+        threshold=params.VALUE_ITERATION_THRESHOLD
+        )

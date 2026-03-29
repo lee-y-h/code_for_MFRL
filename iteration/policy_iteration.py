@@ -10,71 +10,70 @@ if str(project_root) not in sys.path:
 from src.grid_world import GridWorld
 from iteration import iteration_params as params
 
-def main():
-    env = GridWorld(
-        width=params.GRID_SIZE,
-        height=params.GRID_SIZE,
-        target=params.GOAL_POS,
-        forbidden=params.FORBIDDEN_CELLS,
-        params_module=params,
-    )
+class PolicyIteration:
+    def __init__(self):
+        self.env = GridWorld(width=params.GRID_SIZE, height=params.GRID_SIZE,
+            target=params.GOAL_POS, forbidden=params.FORBIDDEN_CELLS, params_module=params)
 
-    # Initialize policy
-    V = {}
-    A = {}
-    for x in range(env.width):
-        for y in range(env.height):
-            V[(x, y)] = 0
-            A[(x, y)] = 1  # arbitrary initial action
+        self.states = self.env.states
+        self.actions = self.env.actions
 
-    iteration_pi = params.POLICY_IMPROVEMENT_STEPS
-    for it_pi in range(params.POLICY_IMPROVEMENT_STEPS):
-        # Policy Evaluation
-        for it_pe in range(params.POLICY_EVALUATION_STEPS):
-            V_new = {}
-            for x in range(env.width):
-                for y in range(env.height):
-                    state = (x, y)
-                    action = A[state]
-                    next_state, reward = env.get_next_state_and_reward(state, action)
-                    V_new[state] = reward + params.POLICY_ITERATION_DISCOUNT_FACTOR * V.get(next_state, 0)
-            
-            # check for convergence
-            delta = max(abs(V[s] - V_new[s]) for s in V)
-            V = V_new
-            if delta < params.POLICY_EVALUATION_THRESHOLD:
-                break
+        self.gamma = params.POLICY_ITERATION_DISCOUNT_FACTOR
 
-        # Policy Improvement
-        policy_stable = True
-        for x in range(env.width):
-            for y in range(env.height):
-                state = (x, y)
-                old_action = A[state]
-                best_action = old_action
-                best_value = float('-inf')
-                for action in env.ACTIONS.keys():
-                    next_state, reward = env.get_next_state_and_reward(state, action)
-                    action_value = reward + params.POLICY_ITERATION_DISCOUNT_FACTOR * V[next_state]
-                    if action_value > best_value:
-                        best_value = action_value
-                        best_action = action
-                A[state] = best_action
-                if old_action != best_action:
+        self.values = {state: 0.0 for state in self.states}  # Initialize value
+        self.policy = {state: self.actions[0] for state in self.states}  # Initialize policy
+
+    def solve(self, max_improvement_steps, max_evaluation_steps, threshold):
+
+        self.values = {state: 0.0 for state in self.states}  # Initialize value
+
+        # Policy iteration
+        improvement_iterations = max_improvement_steps
+        for it_pi in range(1, max_improvement_steps + 1):
+            # Policy evaluation
+            for _ in range(max_evaluation_steps):
+                v_t1 = {state: 0.0 for state in self.states}
+                for state in self.states:
+                    action = self.policy[state]
+                    next_state, reward = self.env.get_next_state_and_reward(state, action)
+                    v_t1[state] = reward + self.gamma * self.values[next_state]
+
+                delta = max(abs(self.values[s] - v_t1[s]) for s in self.values)
+                self.values = v_t1
+                if delta < threshold:
+                    break
+
+            # Policy improvement
+            policy_stable = True
+            for state in self.states:
+                old_action = self.policy[state]
+                qvalues = {action: 0.0 for action in self.actions}
+                for action in self.actions:
+                    next_state, reward = self.env.get_next_state_and_reward(state, action)
+                    qvalues[action] = reward + self.gamma * self.values[next_state]
+
+                self.policy[state] = max(qvalues, key=lambda action: qvalues[action])
+                if old_action != self.policy[state]:
                     policy_stable = False
 
-        if policy_stable:
-            iteration_pi = it_pi
-            break
+            if policy_stable:
+                improvement_iterations = it_pi
+                break
 
-    if params.SHOW_GRID_WORLD:
-        env.render(V, A, folder_path=str(project_root / 'renders' / 'policy_iteration'),
-                   title=f'policy_improvement_steps={iteration_pi}, '
-                   +f'policy_evaluation_steps={params.POLICY_EVALUATION_STEPS}, '
-                   +f'r_target={params.REWARD_TARGET}, '
-                   +f'r_forbidden={params.REWARD_FORBIDDEN}, '
-                   +f'discount={params.POLICY_ITERATION_DISCOUNT_FACTOR}'
-                   )
-        
+        if params.SHOW_GRID_WORLD:
+            self.env.render(self.values, self.policy, folder_path=str(project_root / 'renders' / 'policy_iteration'),
+                    title=f'policy_improvement_steps={improvement_iterations}, '
+                    +f'policy_evaluation_steps={max_evaluation_steps}, '
+                    +f'r_target={params.REWARD_TARGET}, '
+                    +f'r_forbidden={params.REWARD_FORBIDDEN}, '
+                    +f'discount={params.POLICY_ITERATION_DISCOUNT_FACTOR}'
+                    )
+
+
 if __name__ == "__main__":
-    main()
+    pi = PolicyIteration()
+    pi.solve(
+        max_improvement_steps=params.POLICY_IMPROVEMENT_STEPS,
+        max_evaluation_steps=params.POLICY_EVALUATION_STEPS,
+        threshold=params.POLICY_EVALUATION_THRESHOLD
+    )

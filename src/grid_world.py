@@ -1,4 +1,5 @@
 import random
+from typing import Mapping, Sequence
 
 from pathlib import Path
 from datetime import datetime
@@ -18,7 +19,7 @@ class GridWorld:
     v y
     """
 
-    ACTIONS = {
+    ACTIONS: dict[int, tuple[int, int]] = {
         1: (0, -1),  # up
         2: (0, 1),   # down
         3: (-1, 0),  # left
@@ -26,7 +27,15 @@ class GridWorld:
         5: (0, 0),   # stay
     }
 
-    def __init__(self, width, height, target, forbidden=None, params_module=None):
+    def __init__(
+        self,
+        width: int,
+        height: int,
+        target: Sequence[int],
+        forbidden: Sequence[Sequence[int]] | None = None,
+        params_module=None,
+        start: Sequence[int] | None = None,
+    ):
         """
         GridWorld constructor.
 
@@ -37,10 +46,10 @@ class GridWorld:
         """
         self.width = width
         self.height = height
-        self.target = tuple(target)
-        self.forbidden = [tuple(f) for f in (forbidden or [])]
+        self.target = (int(target[0]), int(target[1]))
+        self.forbidden = [(int(f[0]), int(f[1])) for f in (forbidden or [])]
 
-        self.states = [(x, y) for x in range(self.width) for y in range(self.height)]
+        self.states: list[tuple[int, int]] = [(x, y) for x in range(self.width) for y in range(self.height)]
         self.actions = list(self.ACTIONS.keys())
 
         # determine which params module to use
@@ -52,23 +61,35 @@ class GridWorld:
         else:
             _params = params_module
 
+        configured_start = getattr(_params, 'START_POS', (0, 0)) if _params else (0, 0)
+        start_seq = configured_start if start is None else start
+
+        self.start_state = (int(start_seq[0]), int(start_seq[1]))
+        if not self.in_bounds(self.start_state):
+            raise ValueError(f"Invalid start state {self.start_state}: out of grid bounds")
+        if self.is_forbidden(self.start_state):
+            raise ValueError(f"Invalid start state {self.start_state}: forbidden cell")
+
+        self.current_state = self.start_state
+
         # Set reward constants on the instance, using defaults if missing
         self.REWARD_TARGET = getattr(_params, 'REWARD_TARGET', 1)
         self.REWARD_BOUNDARY = getattr(_params, 'REWARD_BOUNDARY', -1)
         self.REWARD_FORBIDDEN = getattr(_params, 'REWARD_FORBIDDEN', -10)
         self.REWARD_STEP = getattr(_params, 'REWARD_STEP', 0)
+        self.REWARD_STAY = getattr(_params, 'REWARD_STAY', 0)
 
-    def in_bounds(self, state):
+    def in_bounds(self, state: tuple[int, int]) -> bool:
         x, y = state
         return 0 <= x < self.width and 0 <= y < self.height
 
-    def is_forbidden(self, state):
+    def is_forbidden(self, state: tuple[int, int]) -> bool:
         return state in self.forbidden
 
-    def is_target(self, state):
+    def is_target(self, state: tuple[int, int]) -> bool:
         return state == self.target
 
-    def sample_state_action_pair(self):
+    def sample_state_action_pair(self) -> tuple[tuple[int, int], int]:
         """
         Sample a random (state, action) pair from the grid world.
 
@@ -82,7 +103,33 @@ class GridWorld:
         action = random.choice(list(self.ACTIONS.keys()))
         return state, action
 
-    def get_next_state_and_reward(self, state, action):
+    def _sample_action_from_probs(
+        self,
+        state: tuple[int, int],
+        policy_probs: Mapping[tuple[int, int], Mapping[int, float]],
+    ) -> int:
+        probs = policy_probs[state]
+        actions = list(probs.keys())
+        weights = [probs[a] for a in actions]
+        return random.choices(actions, weights=weights, k=1)[0]
+
+    def reset(self, start_state: Sequence[int] | None = None) -> tuple[int, int]:
+        state = self.start_state if start_state is None else (int(start_state[0]), int(start_state[1]))
+        if not self.in_bounds(state):
+            raise ValueError(f"Invalid reset state {state}: out of grid bounds")
+        if self.is_forbidden(state):
+            raise ValueError(f"Invalid reset state {state}: forbidden cell")
+
+        self.current_state = state
+        return self.current_state
+
+    def step(self, action: int) -> tuple[tuple[int, int], float, bool]:
+        next_state, reward = self.get_next_state_and_reward(self.current_state, action)
+        self.current_state = next_state
+        done = self.is_target(next_state)
+        return next_state, reward, done
+
+    def get_next_state_and_reward(self, state: tuple[int, int], action: int) -> tuple[tuple[int, int], float]:
         """
         Compute the next state and reward for taking `action` in `state`.
 
@@ -112,31 +159,64 @@ class GridWorld:
         elif self.is_forbidden(next_state):
             reward = self.REWARD_FORBIDDEN
         else:
-            reward = self.REWARD_STEP
+            if action == 5:  # stay action
+                reward = self.REWARD_STAY
+            else:
+                reward = self.REWARD_STEP
 
         return next_state, reward
     
-    def generate_episode(self, start_state, policy_probs, max_length=100):
+    def generate_stochastic_episode(self, start_state=None, policy_probs=None, max_length=100, action=None):
         """
         Generate an episode by following `policy_probs` starting from `start_state`.
 
         - `policy_probs` is a dict mapping state -> action probabilities (dict).
         - `max_length` is the maximum length of the episode (to prevent infinite loops).
 
-        Returns: list of (state, action, reward) tuples.
+        Returns: list of (state, action, reward, next_state, done) tuples.
         """
+        if policy_probs is None:
+            raise ValueError("policy_probs must be provided for stochastic episode generation")
+
         episode = []
-        current_state = start_state
+        current_state = self.reset(start_state)
+        if action is None:
+            action = self._sample_action_from_probs(current_state, policy_probs)
 
         for _ in range(max_length):
-            action = random.choices(list(self.ACTIONS.keys()), weights=policy_probs[current_state].values(), k=1)[0]
-            next_state, reward = self.get_next_state_and_reward(current_state, action)
-            episode.append((current_state, action, reward, next_state))
-            if self.is_target(next_state):
+            next_state, reward, done = self.step(action)
+            episode.append((current_state, action, reward, next_state, done))
+            if done:
                 break
             current_state = next_state
+            action = self._sample_action_from_probs(current_state, policy_probs)
 
         return episode
+
+    def generate_deterministic_episode(self, start_state=None, deterministic_policy=None, max_length=100, action=None):
+        """
+        Generate an episode by following a deterministic policy.
+
+        Returns: list of (state, action, reward, next_state, done) tuples.
+        """
+        if deterministic_policy is None:
+            raise ValueError("deterministic_policy must be provided for deterministic episode generation")
+
+        episode = []
+        current_state = self.reset(start_state)
+        if action is None:
+            action = deterministic_policy[current_state]
+
+        for _ in range(max_length):
+            next_state, reward, done = self.step(action)
+            episode.append((current_state, action, reward, next_state, done))
+            if done:
+                break
+            current_state = next_state
+            action = deterministic_policy[current_state]
+
+        return episode
+
 
     def render(self, Values, Actions,
                 folder_path: str = 'grid_world',

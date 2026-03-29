@@ -8,7 +8,7 @@ FORBIDDEN_CELLS = [(1, 1), (1, 3), (1, 4), (2, 1), (2, 2), (3, 3)]
 # Reward parameters
 REWARD_TARGET = 1
 REWARD_BOUNDARY = -1
-REWARD_FORBIDDEN = -1
+REWARD_FORBIDDEN = -10
 REWARD_STEP = 0
 
 # RL parameters

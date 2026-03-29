@@ -10,79 +10,72 @@ if str(project_root) not in sys.path:
 from src.grid_world import GridWorld
 from monte_carlo import monte_carlo_params as params
 
-def main():
-    env = GridWorld(
-        width=params.GRID_SIZE,
-        height=params.GRID_SIZE,
-        target=params.GOAL_POS,
-        forbidden=params.FORBIDDEN_CELLS,
-        params_module=params,
-    )
+class MCBasic:
+    def __init__(self):
+        self.env = GridWorld(width=params.GRID_SIZE, height=params.GRID_SIZE,
+            target=params.GOAL_POS, forbidden=params.FORBIDDEN_CELLS, params_module=params)
 
-    # initialization
-    total_return = {}
-    return_counts = {}
-    A = {}  # policy
-    action_value = {}
-    for x in range(env.width):
-        for y in range(env.height):
-            state = (x, y)
-            action_value[state] = float('-inf')
-            A[state] = 1  # arbitrary initial action
-            for action in env.ACTIONS.keys():
-                total_return[(state, action)] = 0
-                return_counts[(state, action)] = 0
+        self.states = self.env.states
+        self.actions = self.env.actions
 
-    # Monte Carlo Basic
-    iterations = params.MC_VALUE_ESTIMATION_MAX_ITERATE_STEPS
-    for it in range(params.MC_VALUE_ESTIMATION_MAX_ITERATE_STEPS):
-        old_state_value = action_value.copy()   # state_value = action_value under this policy
-        old_policy = A.copy()
-        for x in range(env.width):
-            for y in range(env.height):
-                state = (x, y)
-                best_action = None
-                best_action_value = float('-inf')
-                for action in env.ACTIONS.keys():
-                    for episode in range(params.MC_BASIC_EPISODES):
-                        current_state = state
-                        current_action = action
-                        G = 0
-                        rate = 1.0
-                        for step in range(params.MC_BASIC_EPISODE_LENGTH):
-                            next_state, g = env.get_next_state_and_reward(current_state, current_action)
-                            G += rate * g
-                            rate *= params.MC_BASIC_DISCOUNT_FACTOR
-                            current_state = next_state
-                            current_action = old_policy[current_state]
-                        
-                        total_return[(state, action)] += G
-                        return_counts[(state, action)] += 1
-                
-                    if return_counts[(state, action)] > 0:
-                        estimated_action_value = total_return[(state, action)] / return_counts[(state, action)]
-                        if estimated_action_value > best_action_value:
-                            best_action_value = estimated_action_value
-                            best_action = action
+        self.gamma = params.MC_BASIC_DISCOUNT_FACTOR
 
-                A[state] = best_action
-                action_value[state] = best_action_value
-        
-        # check for convergence
-        if old_policy == A:
-            delta = max(abs(old_state_value[s] - action_value[s]) for s in action_value)
-            if delta < params.MC_VALUE_ESTIMATION_THRESHOLD:
-                iterations = it
-                break
-    
-    if params.SHOW_GRID_WORLD:
-        env.render(action_value, A, folder_path=str(project_root / 'renders' / 'mc_basic'),
-                   title=f'iteration={iterations}, '
-                   +f'r_target={params.REWARD_TARGET}, '
-                   +f'r_forbidden={params.REWARD_FORBIDDEN}, '
-                   +f'discount={params.MC_BASIC_DISCOUNT_FACTOR}, '
-                   +f'episode_length={params.MC_BASIC_EPISODE_LENGTH}'
-                   )
-        
+        self.policy = {state: self.actions[0] for state in self.states}  # Initialize policy
+        self.values = {state: 0.0 for state in self.states}  # Initialize value
+        self.total_return = {(state, action): 0.0 for state in self.states for action in self.actions}
+        self.return_counts = {(state, action): 0 for state in self.states for action in self.actions}
+
+    def calculate_returns(self, episode):
+        discounted_return = 0.0
+        for _, _, reward_t, _, _ in reversed(episode):
+            discounted_return = self.gamma * discounted_return + reward_t
+        return discounted_return
+
+    def solve(self, max_iterations, threshold, episodes, episode_length):
+        iterations = max_iterations
+        for it in range(1, max_iterations + 1):
+            old_values = self.values.copy()
+            old_policy = self.policy.copy()
+
+            # Generate episodes starting from all state-action pairs
+            for state in self.states:
+                qvalues = {action: float('-inf') for action in self.actions}
+                for action in self.actions:
+                    for _ in range(episodes):
+                        episode = self.env.generate_deterministic_episode(state, self.policy, episode_length, action=action)
+                        discounted_return = self.calculate_returns(episode)
+                        self.total_return[(state, action)] += discounted_return
+                        self.return_counts[(state, action)] += 1
+
+                    if self.return_counts[(state, action)] > 0:
+                        qvalues[action] = self.total_return[(state, action)] / self.return_counts[(state, action)]
+
+                # policy improvement
+                self.policy[state] = max(qvalues, key=lambda act: qvalues[act])
+                self.values[state] = qvalues[self.policy[state]]
+
+            # Check for convergence
+            if old_policy == self.policy:
+                delta = max(abs(old_values[s] - self.values[s]) for s in self.values)
+                if delta < threshold:
+                    iterations = it
+                    break
+
+        if params.SHOW_GRID_WORLD:
+            self.env.render(self.values, self.policy, folder_path=str(project_root / 'renders' / 'mc_basic'),
+                title=f'iteration={iterations}, '
+                +f'r_target={params.REWARD_TARGET}, '
+                +f'r_forbidden={params.REWARD_FORBIDDEN}, '
+                +f'discount={params.MC_BASIC_DISCOUNT_FACTOR}, '
+                +f'episode_length={params.MC_BASIC_EPISODE_LENGTH}'
+            )
+
+
 if __name__ == "__main__":
-    main()
+    mc = MCBasic()
+    mc.solve(
+        max_iterations=params.MC_VALUE_ESTIMATION_MAX_ITERATE_STEPS,
+        threshold=params.MC_VALUE_ESTIMATION_THRESHOLD,
+        episodes=params.MC_BASIC_EPISODES,
+        episode_length=params.MC_BASIC_EPISODE_LENGTH,
+    )
