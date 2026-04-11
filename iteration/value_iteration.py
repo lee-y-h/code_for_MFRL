@@ -1,24 +1,20 @@
 from pathlib import Path
-import sys
-
-# Ensure project root is on sys.path
-# script is run from the project root or directly.
 project_root = Path(__file__).resolve().parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
 
 from src.grid_world import GridWorld
-from iteration import iteration_params as params
 
 class ValueIteration:
-    def __init__(self):
-        self.env = GridWorld(width=params.GRID_SIZE, height=params.GRID_SIZE,
-            target=params.GOAL_POS, forbidden=params.FORBIDDEN_CELLS, params_module=params)
+    def __init__(
+        self,
+        env,
+        gamma,
+    ):
+        self.env = env
         
         self.states = self.env.states
         self.actions = self.env.actions
 
-        self.gamma = params.VALUE_ITERATION_DISCOUNT_FACTOR
+        self.gamma = gamma
 
         self.values = {state: 0.0 for state in self.states}  # Initialize value
         self.policy = {state: self.actions[0] for state in self.states}  # Initialize policy
@@ -47,17 +43,43 @@ class ValueIteration:
                 iterations = it
                 break
 
-        if params.SHOW_GRID_WORLD:
-            self.env.render(self.values, self.policy, folder_path=str(project_root / 'renders' / 'value_iteration'),
-                    title=f'iteration={iterations}, '
-                    +f'r_target={params.REWARD_TARGET}, '
-                    +f'r_forbidden={params.REWARD_FORBIDDEN}, '
-                    +f'discount={params.VALUE_ITERATION_DISCOUNT_FACTOR}'
-                    )
+        self.env.render(self.values, self.policy, folder_path=str(project_root / 'renders' / 'value_iteration'),
+            title=f'iteration={iterations}, '
+            +f'gamma={self.gamma}'
+            )
 
 if __name__ == "__main__":
-    vi = ValueIteration()
+    config = {
+        "grid_size": 5,
+        "target_pos": (2, 3),
+        "forbidden_cells": [(1, 1), (1, 3), (1, 4), (2, 1), (2, 2), (3, 3)],
+        "r_target": 1,
+        "r_boundary": -1,
+        "r_forbidden": -10,
+        "r_step": 0,
+        "r_stay": 0,
+        "gamma": 0.9,
+        "threshold": 1e-4,
+        "max_iterations": 100,
+    }
+
+    env = GridWorld(
+        width=config["grid_size"],
+        height=config["grid_size"],
+        target=config["target_pos"],
+        forbidden=config["forbidden_cells"],
+        r_target=config["r_target"],
+        r_boundary=config["r_boundary"],
+        r_forbidden=config["r_forbidden"],
+        r_step=config["r_step"],
+        r_stay=config["r_stay"],
+    )
+
+    vi = ValueIteration(
+        env=env,
+        gamma=config["gamma"],
+    )
     vi.solve(
-        max_iterations=params.VALUE_ITERATION_MAX_ITERATE_STEPS,
-        threshold=params.VALUE_ITERATION_THRESHOLD
+        max_iterations=config["max_iterations"],
+        threshold=config["threshold"],
         )

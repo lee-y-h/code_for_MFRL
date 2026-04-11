@@ -1,24 +1,20 @@
 from pathlib import Path
-import sys
-
-# Ensure project root is on sys.path
-# script is run from the project root or directly.
 project_root = Path(__file__).resolve().parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
 
 from src.grid_world import GridWorld
-from iteration import iteration_params as params
 
 class PolicyIteration:
-    def __init__(self):
-        self.env = GridWorld(width=params.GRID_SIZE, height=params.GRID_SIZE,
-            target=params.GOAL_POS, forbidden=params.FORBIDDEN_CELLS, params_module=params)
+    def __init__(
+        self,
+        env,
+        gamma,
+    ):
+        self.env = env
 
         self.states = self.env.states
         self.actions = self.env.actions
 
-        self.gamma = params.POLICY_ITERATION_DISCOUNT_FACTOR
+        self.gamma = gamma
 
         self.values = {state: 0.0 for state in self.states}  # Initialize value
         self.policy = {state: self.actions[0] for state in self.states}  # Initialize policy
@@ -31,6 +27,7 @@ class PolicyIteration:
         improvement_iterations = max_improvement_steps
         for it_pi in range(1, max_improvement_steps + 1):
             # Policy evaluation
+            evaluation_converged = False
             for _ in range(max_evaluation_steps):
                 v_t1 = {state: 0.0 for state in self.states}
                 for state in self.states:
@@ -41,6 +38,7 @@ class PolicyIteration:
                 delta = max(abs(self.values[s] - v_t1[s]) for s in self.values)
                 self.values = v_t1
                 if delta < threshold:
+                    evaluation_converged = True
                     break
 
             # Policy improvement
@@ -56,24 +54,52 @@ class PolicyIteration:
                 if old_action != self.policy[state]:
                     policy_stable = False
 
-            if policy_stable:
+            # Avoid early stop when policy appears stable under under-evaluated values.
+            if policy_stable and evaluation_converged:
                 improvement_iterations = it_pi
                 break
 
-        if params.SHOW_GRID_WORLD:
-            self.env.render(self.values, self.policy, folder_path=str(project_root / 'renders' / 'policy_iteration'),
-                    title=f'policy_improvement_steps={improvement_iterations}, '
-                    +f'policy_evaluation_steps={max_evaluation_steps}, '
-                    +f'r_target={params.REWARD_TARGET}, '
-                    +f'r_forbidden={params.REWARD_FORBIDDEN}, '
-                    +f'discount={params.POLICY_ITERATION_DISCOUNT_FACTOR}'
-                    )
+        self.env.render(self.values, self.policy, folder_path=str(project_root / 'renders' / 'policy_iteration'),
+                title=f'policy_improvement_steps={improvement_iterations}, '
+                +f'policy_evaluation_steps={max_evaluation_steps}, '
+                +f'gamma={self.gamma}'
+                )
 
 
 if __name__ == "__main__":
-    pi = PolicyIteration()
+    config = {
+        "grid_size": 5,
+        "target_pos": (2, 3),
+        "forbidden_cells": [(1, 1), (1, 3), (1, 4), (2, 1), (2, 2), (3, 3)],
+        "r_target": 1,
+        "r_boundary": -1,
+        "r_forbidden": -10,
+        "r_step": 0,
+        "r_stay": 0,
+        "gamma": 0.9,
+        "threshold": 1e-4,
+        "max_evaluation_steps": 20,
+        "max_improvement_steps": 20,
+    }
+
+    env = GridWorld(
+        width=config["grid_size"],
+        height=config["grid_size"],
+        target=config["target_pos"],
+        forbidden=config["forbidden_cells"],
+        r_target=config["r_target"],
+        r_boundary=config["r_boundary"],
+        r_forbidden=config["r_forbidden"],
+        r_step=config["r_step"],
+        r_stay=config["r_stay"],
+    )
+
+    pi = PolicyIteration(
+        env=env,
+        gamma=config["gamma"],
+    )
     pi.solve(
-        max_improvement_steps=params.POLICY_IMPROVEMENT_STEPS,
-        max_evaluation_steps=params.POLICY_EVALUATION_STEPS,
-        threshold=params.POLICY_EVALUATION_THRESHOLD
+        max_improvement_steps=config["max_improvement_steps"],
+        max_evaluation_steps=config["max_evaluation_steps"],
+        threshold=config["threshold"],
     )

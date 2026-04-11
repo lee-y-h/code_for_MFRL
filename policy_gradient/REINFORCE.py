@@ -1,7 +1,5 @@
 from pathlib import Path
 from datetime import datetime
-import re
-import sys
 import random
 
 import numpy as np
@@ -10,37 +8,32 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset
 
-# Ensure project root is on sys.path
-# script is run from the project root or directly.
 project_root = Path(__file__).resolve().parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
 
 from src.grid_world import GridWorld
-from policy_gradient import policy_gradient_params as params
 from src.plot_utils import plot_loss
 
 class REINFORCE:
-    def __init__(self, seed) -> None:
+    def __init__(self, env, seed, gamma, lr, net_size) -> None:
         self.set_seed(seed)
 
-        self.env = GridWorld(width=params.GRID_SIZE, height=params.GRID_SIZE,
-            target=params.TARGET_POS, forbidden=params.FORBIDDEN_CELLS, params_module=params)
+        self.env = env
+        self.start_pos = self.env.start_state
         
         self.states = self.env.states
         self.n_states = len(self.states)
         self.actions = self.env.actions
         self.n_actions = len(self.actions)
 
-        self.gamma = params.REINFORCE_GAMMA
-        self.lr = params.REINFORCE_LR
+        self.gamma = gamma
+        self.lr = lr
 
         self.device = self.get_device()
         self.PI_net = nn.Sequential(
-            nn.Linear(2, params.REINFORCE_NET_SIZE),
+            nn.Linear(2, net_size),
             nn.ReLU(),
             nn.Dropout(0.1),
-            nn.Linear(params.REINFORCE_NET_SIZE, self.n_actions)
+            nn.Linear(net_size, self.n_actions)
         )
         self.PI_net.to(self.device)
         self.optimizer = torch.optim.Adam(self.PI_net.parameters(), lr = self.lr)
@@ -67,10 +60,10 @@ class REINFORCE:
 
         return states_tensor    
 
-    def solve(self, num_episodes, episode_max_len):
+    def solve(self, n_episodes, episode_max_len):
         loss_record = []
-        for ep in range(1, num_episodes + 1):
-            state = params.START_POS
+        for ep in range(1, n_episodes + 1):
+            state = self.start_pos
             state_tensor = self.state_to_tensor(state)
 
             episode = []
@@ -119,25 +112,66 @@ class REINFORCE:
             if ep % 10 == 0:
                 print(f"{sum(loss_record[-10:])/10:.4f}", end=' ')
 
-            if ep % (num_episodes // 10) == 0:
-                if params.SHOW_GRID_WORLD:
-                    target_policy = {}
-                    for state in self.states:
-                        state_tensor = self.state_to_tensor(state)
-                        logits = self.PI_net(state_tensor)
-                        action_probs = torch.softmax(logits, dim=0)
-                        best_action_index = torch.argmax(action_probs, dim=0).item()
-                        target_policy[state] = self.actions[int(best_action_index)]
-                    self.env.render(None, target_policy, self.folder_path, 
-                                    title=f"episode:{ep}/{num_episodes}")
+            if ep % (n_episodes // 10) == 0:
+                target_policy = {}
+                for state in self.states:
+                    state_tensor = self.state_to_tensor(state)
+                    logits = self.PI_net(state_tensor)
+                    action_probs = torch.softmax(logits, dim=0)
+                    best_action_index = torch.argmax(action_probs, dim=0).item()
+                    target_policy[state] = self.actions[int(best_action_index)]
+                self.env.render(None, target_policy, self.folder_path, 
+                                title=f"episode:{ep}/{n_episodes}")
                     
         return loss_record
 
     def plot_loss_(self, loss_record):
-        plot_loss(loss_record, self.folder_path, 
-                  title="REINFORCE Loss Curve", file_name="loss_curve.png")
+        plot_loss(
+            loss_record,
+            self.folder_path,
+            title="REINFORCE Loss Curve",
+            file_name="loss_curve.png",
+            x_label="Episode",
+        )
 
 if __name__ == "__main__":
-    reinforce = REINFORCE(params.REINFORCE_SEED)
-    loss_record = reinforce.solve(params.REINFORCE_EPISODE, params.REINFORCE_MAX_EPISODE_LENGTH)
+    config = {
+        "grid_size": 5,
+        "start_pos": (0, 0),
+        "target_pos": (2, 3),
+        "forbidden_cells": [(1, 1), (1, 3), (2, 1), (2, 2), (3, 3)],
+        "r_target": 1,
+        "r_boundary": -1,
+        "r_forbidden": -1,
+        "r_step": 0,
+        "r_stay": 0,
+        "seed": 42,
+        "gamma": 0.95,
+        "lr": 2e-4,
+        "net_size": 128,
+        "n_episodes": 50000,
+        "max_episode_len": 100,
+    }
+
+    env = GridWorld(
+        width=config["grid_size"],
+        height=config["grid_size"],
+        target=config["target_pos"],
+        forbidden=config["forbidden_cells"],
+        start=config["start_pos"],
+        r_target=config["r_target"],
+        r_boundary=config["r_boundary"],
+        r_forbidden=config["r_forbidden"],
+        r_step=config["r_step"],
+        r_stay=config["r_stay"],
+    )
+
+    reinforce = REINFORCE(
+        env=env,
+        seed=config["seed"],
+        gamma=config["gamma"],
+        lr=config["lr"],
+        net_size=config["net_size"],
+    )
+    loss_record = reinforce.solve(config["n_episodes"], config["max_episode_len"])
     reinforce.plot_loss_(loss_record)

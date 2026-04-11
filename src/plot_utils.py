@@ -3,7 +3,23 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 
 
-def plot_episode_stats(episode_lengths=None, total_rewards=None, out_dir='renders/plots', title=None, filename=None):
+def _infer_x_label_from_title(title, default_label='Step'):
+    if not title:
+        return default_label
+
+    t = str(title).lower()
+    if 'episode' in t or 'episodes' in t or 'n_episodes' in t:
+        return 'Episode'
+    if 'epoch' in t or 'epochs' in t or 'n_epochs' in t:
+        return 'Epoch'
+    if 'step' in t or 'steps' in t:
+        return 'Step'
+    if 'iteration' in t or 'iterations' in t or 'iter' in t:
+        return 'Iteration'
+    return default_label
+
+
+def plot_episode_stats(episode_lengths=None, total_rewards=None, out_dir='renders/plots', title=None, filename=None, x_label=None):
     """Plot episode statistics and save to PNG.
 
     Both `episode_lengths` and `total_rewards` are optional (may be None).
@@ -34,6 +50,8 @@ def plot_episode_stats(episode_lengths=None, total_rewards=None, out_dir='render
     else:
         episodes = []
 
+    resolved_x_label = x_label or _infer_x_label_from_title(title, default_label='Episode')
+
     if episode_lengths is None and total_rewards is None:
         fig, ax = plt.subplots(figsize=(6, 3))
         if title:
@@ -44,7 +62,7 @@ def plot_episode_stats(episode_lengths=None, total_rewards=None, out_dir='render
         fig, ax = plt.subplots(figsize=(8, 4))
         assert episode_lengths is not None
         ax.plot(episodes, episode_lengths, linestyle='-', linewidth=1)
-        ax.set_xlabel('Episode')
+        ax.set_xlabel(resolved_x_label)
         ax.set_ylabel('Episode length')
         if title:
             ax.set_title(title)
@@ -61,7 +79,7 @@ def plot_episode_stats(episode_lengths=None, total_rewards=None, out_dir='render
         fig, ax = plt.subplots(figsize=(8, 4))
         assert total_rewards is not None
         ax.plot(episodes, total_rewards, linestyle='-', color='C1', linewidth=1)
-        ax.set_xlabel('Episode')
+        ax.set_xlabel(resolved_x_label)
         ax.set_ylabel('Total reward')
         if title:
             ax.set_title(title)
@@ -83,7 +101,7 @@ def plot_episode_stats(episode_lengths=None, total_rewards=None, out_dir='render
         ax_top.tick_params(labelbottom=False)
 
         ax_bot.plot(episodes, episode_lengths, linestyle='-', color='C0', linewidth=1)
-        ax_bot.set_xlabel('Episode')
+        ax_bot.set_xlabel(resolved_x_label)
         ax_bot.set_ylabel('Episode length')
         ax_bot.grid(True)
 
@@ -107,7 +125,7 @@ def plot_episode_stats(episode_lengths=None, total_rewards=None, out_dir='render
     plt.close(fig)
 
 
-def plot_loss(losses, out_dir='renders/plots', title=None, file_name=None):
+def plot_loss(losses, out_dir='renders/plots', title=None, file_name=None, x_label=None):
     """Plot loss vs iteration and save to PNG.
 
     Parameters:
@@ -128,8 +146,10 @@ def plot_loss(losses, out_dir='renders/plots', title=None, file_name=None):
     iters = list(range(1, len(vals) + 1))
 
     fig, ax = plt.subplots(figsize=(8, 4))
+    resolved_x_label = x_label or _infer_x_label_from_title(title, default_label='Step')
+
     ax.plot(iters, vals, marker='o', markersize=3, linewidth=1, color='C2')
-    ax.set_xlabel('Iteration')
+    ax.set_xlabel(resolved_x_label)
     ax.set_ylabel('Loss')
     if title:
         ax.set_title(title)

@@ -33,16 +33,17 @@ class GridWorld:
         height: int,
         target: Sequence[int],
         forbidden: Sequence[Sequence[int]] | None = None,
-        params_module=None,
         start: Sequence[int] | None = None,
+        r_target: float | None = None,
+        r_boundary: float | None = None,
+        r_forbidden: float | None = None,
+        r_step: float | None = None,
+        r_stay: float | None = None,
     ):
         """
         GridWorld constructor.
 
-        If `params_module` is provided it should be a module-like object containing
-        REWARD_TARGET, REWARD_BOUNDARY, REWARD_FORBIDDEN, REWARD_STEP constants
-        (and any other parameters the caller needs). If not provided, the
-        top-level `params` module will be used.
+        Reward and start parameters are expected to be passed directly.
         """
         self.width = width
         self.height = height
@@ -52,32 +53,19 @@ class GridWorld:
         self.states: list[tuple[int, int]] = [(x, y) for x in range(self.width) for y in range(self.height)]
         self.actions = list(self.ACTIONS.keys())
 
-        # determine which params module to use
-        if params_module is None:
-            try:
-                import grid_world_params as _params
-            except Exception:
-                _params = None
-        else:
-            _params = params_module
-
-        configured_start = getattr(_params, 'START_POS', (0, 0)) if _params else (0, 0)
-        start_seq = configured_start if start is None else start
+        start_seq = (0, 0) if start is None else start
 
         self.start_state = (int(start_seq[0]), int(start_seq[1]))
         if not self.in_bounds(self.start_state):
             raise ValueError(f"Invalid start state {self.start_state}: out of grid bounds")
-        if self.is_forbidden(self.start_state):
-            raise ValueError(f"Invalid start state {self.start_state}: forbidden cell")
 
         self.current_state = self.start_state
 
-        # Set reward constants on the instance, using defaults if missing
-        self.REWARD_TARGET = getattr(_params, 'REWARD_TARGET', 1)
-        self.REWARD_BOUNDARY = getattr(_params, 'REWARD_BOUNDARY', -1)
-        self.REWARD_FORBIDDEN = getattr(_params, 'REWARD_FORBIDDEN', -10)
-        self.REWARD_STEP = getattr(_params, 'REWARD_STEP', 0)
-        self.REWARD_STAY = getattr(_params, 'REWARD_STAY', 0)
+        self.r_target = 1 if r_target is None else r_target
+        self.r_boundary = -1 if r_boundary is None else r_boundary
+        self.r_forbidden = -10 if r_forbidden is None else r_forbidden
+        self.r_step = 0 if r_step is None else r_step
+        self.r_stay = 0 if r_stay is None else r_stay
 
     def in_bounds(self, state: tuple[int, int]) -> bool:
         x, y = state
@@ -100,7 +88,7 @@ class GridWorld:
         y = random.randint(0, self.height - 1)
         state = (x, y)
 
-        action = random.choice(list(self.ACTIONS.keys()))
+        action = random.choice(self.actions)
         return state, action
 
     def _sample_action_from_probs(
@@ -117,8 +105,6 @@ class GridWorld:
         state = self.start_state if start_state is None else (int(start_state[0]), int(start_state[1]))
         if not self.in_bounds(state):
             raise ValueError(f"Invalid reset state {state}: out of grid bounds")
-        if self.is_forbidden(state):
-            raise ValueError(f"Invalid reset state {state}: forbidden cell")
 
         self.current_state = state
         return self.current_state
@@ -147,7 +133,7 @@ class GridWorld:
 
         if not self.in_bounds(candidate):
             next_state = (x, y)
-            reward = self.REWARD_BOUNDARY
+            reward = self.r_boundary
             return next_state, reward
 
         # Otherwise move into candidate
@@ -155,14 +141,14 @@ class GridWorld:
 
         # Target / forbidden / step rewards
         if self.is_target(next_state):
-            reward = self.REWARD_TARGET
+            reward = self.r_target
         elif self.is_forbidden(next_state):
-            reward = self.REWARD_FORBIDDEN
+            reward = self.r_forbidden
         else:
             if action == 5:  # stay action
-                reward = self.REWARD_STAY
+                reward = self.r_stay
             else:
-                reward = self.REWARD_STEP
+                reward = self.r_step
 
         return next_state, reward
     

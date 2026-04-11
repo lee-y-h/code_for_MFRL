@@ -1,26 +1,20 @@
 from pathlib import Path
-import sys
 import random
 
-# Ensure project root is on sys.path
-# script is run from the project root or directly.
 project_root = Path(__file__).resolve().parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
 
 from src.grid_world import GridWorld
-from TD_learning import TD_params as params
 
 class QLearning:
-    def __init__(self):
-        self.env = GridWorld(width=params.GRID_SIZE, height=params.GRID_SIZE,
-            target=params.TARGET_POS, forbidden=params.FORBIDDEN_CELLS, params_module=params)
+    def __init__(self, env, alpha, gamma):
+        self.env = env
 
         self.states = self.env.states
         self.actions = self.env.actions
 
-        self.alpha = params.Q_LEARNING_ALPHA
-        self.gamma = params.Q_LEARNING_DISCOUNT_FACTOR
+        self.alpha = alpha
+        self.gamma = gamma
+        self.start_pos = self.env.start_state
 
         n_actions = len(self.actions)
         self.qvalues = {state: {action: 0.0 for action in self.actions} for state in self.states}
@@ -31,9 +25,9 @@ class QLearning:
         self.target_policy = {state: self.actions[0] for state in self.states}
         self.values = {state: 0.0 for state in self.states}
 
-    def solve(self, episodes, episode_length):
-        for _ in range(episodes):
-            state_t = self.env.reset(params.START_POS)
+    def solve(self, n_episodes, episode_length):
+        for _ in range(n_episodes):
+            state_t = self.env.reset(self.start_pos)
 
             for _ in range(episode_length):
                 probs = self.behavior_policy_probs[state_t]
@@ -54,19 +48,51 @@ class QLearning:
         for state in self.states:
             self.values[state] = self.qvalues[state][self.target_policy[state]]
 
-        if params.SHOW_GRID_WORLD:
-            self.env.render(self.values, self.target_policy, folder_path=str(project_root / "renders" / "q_learning"),
-                title=f'episodes={params.Q_LEARNING_EPISODES}, '
-                    +f'episode_length={params.Q_LEARNING_EPISODE_LENGTH}, '
-                    +f'alpha={params.Q_LEARNING_ALPHA}, '
-                    +f'discount={params.Q_LEARNING_DISCOUNT_FACTOR}'
-            )
+        self.env.render(self.values, self.target_policy, folder_path=str(project_root / "renders" / "q_learning"),
+            title=f'n_episodes={n_episodes}, '
+                +f'episode_length={episode_length}, '
+                +f'alpha={self.alpha}, '
+                +f'gamma={self.gamma}'
+        )
 
 
 if __name__ == "__main__":
-    ql = QLearning()
+    config = {
+        "grid_size": 5,
+        "start_pos": (0, 0),
+        "target_pos": (2, 3),
+        "forbidden_cells": [(1, 1), (1, 3), (1, 4), (2, 1), (2, 2), (3, 3)],
+        "r_target": 1,
+        "r_boundary": -1,
+        "r_forbidden": -10,
+        "r_step": 0,
+        "r_stay": -0.1,
+        "alpha": 0.1,
+        "gamma": 0.9,
+        "n_episodes": 500,
+        "episode_length": 200,
+    }
+
+    env = GridWorld(
+        width=config["grid_size"],
+        height=config["grid_size"],
+        target=config["target_pos"],
+        forbidden=config["forbidden_cells"],
+        start=config["start_pos"],
+        r_target=config["r_target"],
+        r_boundary=config["r_boundary"],
+        r_forbidden=config["r_forbidden"],
+        r_step=config["r_step"],
+        r_stay=config["r_stay"],
+    )
+
+    ql = QLearning(
+        env=env,
+        alpha=config["alpha"],
+        gamma=config["gamma"],
+    )
     ql.solve(
-        episodes=params.Q_LEARNING_EPISODES,
-        episode_length=params.Q_LEARNING_EPISODE_LENGTH,
+        n_episodes=config["n_episodes"],
+        episode_length=config["episode_length"],
     )
                         

@@ -1,158 +1,196 @@
 from pathlib import Path
-import sys
 import random
+from datetime import datetime
 
-# Ensure project root is on sys.path
-# script is run from the project root or directly.
 project_root = Path(__file__).resolve().parent.parent
-if str(project_root) not in sys.path:
-    sys.path.insert(0, str(project_root))
 
 from src.grid_world import GridWorld
-from value_funtion_methods import FA_params as params
 from src.plot_utils import plot_episode_stats
 
-def phi_s_a(state, action):
-    """
-    Feature function for state-action pair (s, a).
+class SarsaWithFA:
+    def __init__(self, env, gamma, alpha, epsilon):
+        self.env = env
 
-    action-spesific phi:
+        self.states = self.env.states
+        self.actions = self.env.actions
+        self.grid_size = self.env.width
 
-    f_state = [1.0, x, y, x**2, y**2, x*y, x**3, y**3, x**2*y, x*y**2, x**4, y**4, x**3*y, x**2*y**2, x*y**3]
-    f_zero = [0.0] * len(f_state)
+        self.gamma = gamma
+        self.alpha = alpha
+        self.epsilon = epsilon
+        self.start_pos = self.env.start_state
+        self.target_pos = self.env.target
 
-    phi(s, a) = [f_zero, ..., f_state, ..., f_zero]
-    where f_state is at the position corresponding to action a.
-    """
-    
-    phi_s_a = []
+        self.feature_dim = 21
+        self.w = [0.0] * (self.feature_dim * len(self.actions))
+        self.policy_probs = {
+            state: {a: 1.0 / len(self.actions) for a in self.actions}
+            for state in self.states
+        }
+        self.policy_probs[self.target_pos] = {a: 0.0 for a in self.actions}
+        self.policy_probs[self.target_pos][5] = 1.0
 
-    x, y = state
-    x = x / (params.GRID_SIZE - 1) # normalize to [0, 1]
-    y = y / (params.GRID_SIZE - 1) # normalize to [0, 1]
+        self.policy = {state: self.actions[0] for state in self.states}
+        self.episode_lengths = []
+        self.total_rewards = []
 
-    f_state = [1.0, x, y, x**2, y**2, x*y, x**3, y**3, x**2*y, x*y**2, x**4, y**4, x**3*y, x**2*y**2, x*y**3]
-    f_zero = [0.0] * len(f_state)
+        self.timestamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+        self.folder_path = str(project_root / "renders" / "sarsa_with_FA" / f"{self.timestamp}")
 
-    index = list(GridWorld.ACTIONS.keys()).index(action)
+    def _phi_s_a(self, state, action):
+        features = []
 
-    for i, a in enumerate(GridWorld.ACTIONS.keys()):
-        if i == index:
-            phi_s_a.extend(f_state)
-        else:
-            phi_s_a.extend(f_zero)
+        x, y = state
+        x = x / (self.grid_size - 1)
+        y = y / (self.grid_size - 1)
 
-    return phi_s_a
+        f_state = [
+            1.0,
+            x,
+            y,
+            x**2,
+            y**2,
+            x * y,
+            x**3,
+            y**3,
+            x**2 * y,
+            x * y**2,
+            x**4,
+            y**4,
+            x**3 * y,
+            x**2 * y**2,
+            x * y**3,
+            x**5,
+            y**5,
+            x**4 * y,
+            x**3 * y**2,
+            x**2 * y**3,
+            x * y**4,
+        ]
+        f_zero = [0.0] * len(f_state)
 
-def q_s_a(state, action, w):
-    features = phi_s_a(state, action)
-    return sum(w[i] * features[i] for i in range(len(w)))
+        index = self.actions.index(action)
+        for i, _ in enumerate(self.actions):
+            if i == index:
+                features.extend(f_state)
+            else:
+                features.extend(f_zero)
 
-def update_w(w, state, action, reward, next_state, next_action):
-    phi_t = phi_s_a(state, action)
-    q_t = q_s_a(state, action, w)
-    if next_state == params.TARGET_POS:
-        q_t1 = 0.0
-    else:
-        q_t1 = q_s_a(next_state, next_action, w)
+        return features
 
-    td_error = reward + params.SARSA_DISCOUNT_FACTOR * q_t1 - q_t
+    def _q_s_a(self, state, action):
+        features = self._phi_s_a(state, action)
+        return sum(self.w[i] * features[i] for i in range(len(self.w)))
 
-    for i in range(len(w)):
-        w[i] += params.SARSA_ALPHA * td_error * phi_t[i]
+    def _choose_action(self, state):
+        probs = self.policy_probs[state]
+        actions = list(probs.keys())
+        weights = [probs[a] for a in actions]
+        return random.choices(actions, weights=weights, k=1)[0]
 
-def update_policy_probs(policy_probs, w, state):
-    q_values = {a: q_s_a(state, a, w) for a in GridWorld.ACTIONS.keys()}
-    max_q = max(q_values.values())
-    best_actions = [a for a, q in q_values.items() if q == max_q]
+    def _update_w(self, state, action, reward, next_state, next_action):
+        phi_t = self._phi_s_a(state, action)
+        q_t = self._q_s_a(state, action)
+        q_t1 = 0.0 if self.env.is_target(next_state) else self._q_s_a(next_state, next_action)
+        td_error = reward + self.gamma * q_t1 - q_t
 
-    # Update policy probabilities for the given state
-    total_best_actions = len(best_actions)
-    for a in GridWorld.ACTIONS.keys():
-        policy_probs[state][a] = params.SARSA_EPSILON / len(GridWorld.ACTIONS)
-        if a in best_actions:
-            policy_probs[state][a] += (1.0 - params.SARSA_EPSILON) / total_best_actions
+        gradient = [td_error * phi for phi in phi_t]
+        for i in range(len(self.w)):
+            self.w[i] += self.alpha * gradient[i]
+        
+        return gradient       
 
-def choose_action(state, policy_probs):
-    probs = policy_probs[state]
-    actions = list(probs.keys())
-    weights = [probs[a] for a in actions]
-    return random.choices(actions, weights=weights, k=1)[0]
+    def _update_policy_probs(self, state):
+        q_values = {a: self._q_s_a(state, a) for a in self.actions}
+        max_q = max(q_values.values())
+        best_actions = [a for a, q in q_values.items() if q == max_q]
+        total_best = len(best_actions)
 
-def main():
+        for a in self.actions:
+            self.policy_probs[state][a] = self.epsilon / len(self.actions)
+            if a in best_actions:
+                self.policy_probs[state][a] += (1.0 - self.epsilon) / total_best
+
+    def solve(self, n_episodes, max_steps, log_interval=100):
+        gradient_records = []  # To store gradients for analysis
+        for episode in range(1, n_episodes + 1):
+            step = 0
+            reward_sum = 0.0
+            state_t = self.env.reset(self.start_pos)
+            action_t = self._choose_action(state_t)
+            done = False
+
+            while step < max_steps and not done:
+                state_t1, reward, done = self.env.step(action_t)
+                reward_sum += reward
+                action_t1 = self._choose_action(state_t1)
+
+                gradient = self._update_w(state_t, action_t, reward, state_t1, action_t1)
+                gradient_records.append(gradient)
+                self._update_policy_probs(state_t)
+
+                state_t, action_t = state_t1, action_t1
+                step += 1
+
+            self.episode_lengths.append(step)
+            self.total_rewards.append(reward_sum)
+
+            if episode % log_interval == 0:
+                for state in self.states:
+                    self.policy[state] = max(self.policy_probs[state], key=lambda action: self.policy_probs[state][action])
+
+                self.env.render(None, self.policy, folder_path=self.folder_path,
+                    title=f'n_episodes={n_episodes}, ' + f'alpha={self.alpha}, ' + f'epsilon={self.epsilon}, ',
+                    file_name=f'episode_{episode}'
+                )
+
+        plot_episode_stats(
+            self.episode_lengths,
+            self.total_rewards,
+            out_dir=self.folder_path,
+            x_label="Episode",
+        )
+
+if __name__ == "__main__":
+    config = {
+        "grid_size": 5,
+        "start_pos": (0, 0),
+        "target_pos": (4, 4),
+        "forbidden_cells": [(0, 2), (2, 1), (2, 3), (4, 2)],
+        "r_target": 1,
+        "r_boundary": -1,
+        "r_forbidden": -1,
+        "r_step": -0.05,
+        "r_stay": -0.1,
+        "gamma": 0.9,
+        "alpha": 0.001,
+        "epsilon": 0.1,
+        "n_episodes": 1000,
+        "max_steps": 200,
+        "log_interval": 100,
+    }
+
     env = GridWorld(
-        width=params.GRID_SIZE,
-        height=params.GRID_SIZE,
-        target=params.TARGET_POS,
-        forbidden=params.FORBIDDEN_CELLS,
-        params_module=params,
+        width=config["grid_size"],
+        height=config["grid_size"],
+        target=config["target_pos"],
+        forbidden=config["forbidden_cells"],
+        start=config["start_pos"],
+        r_target=config["r_target"],
+        r_boundary=config["r_boundary"],
+        r_forbidden=config["r_forbidden"],
+        r_step=config["r_step"],
+        r_stay=config["r_stay"],
     )
 
-    # initialization
-    w = [0.0] * (15 * len(GridWorld.ACTIONS))  # weight vector for linear function approximation
-
-    policy_probs = {}
-
-    episode_length = []
-    total_reward = []
-
-    for x in range(env.width):
-        for y in range(env.height):
-            state = (x, y)
-            policy_probs[state] = {a: 1.0 / len(GridWorld.ACTIONS) for a in env.ACTIONS.keys()}
-
-    policy_probs[params.TARGET_POS] = {a: 0.0 for a in env.ACTIONS.keys()}
-    policy_probs[params.TARGET_POS][5] = 1.0  # stay at target
-
-    # Sarsa with function approximation
-    for _ in range(params.Q_LEARNING_EPISODES):
-        step = 0
-        reward_sum = 0
-
-        state_t = params.START_POS
-        action_t = choose_action(state_t, policy_probs)
-
-        while step < params.SARSA_MAX_EPISODE_LENGTH and not env.is_target(state_t):
-            state_t1, reward = env.get_next_state_and_reward(state_t, action_t)
-            reward_sum += reward
-            
-            action_t1 = choose_action(state_t1, policy_probs)
-
-            update_w(w, state_t, action_t, reward, state_t1, action_t1)
-
-            update_policy_probs(policy_probs, w, state_t)
-
-            state_t, action_t = state_t1, action_t1
-            step += 1
-
-        episode_length.append(step)
-        total_reward.append(reward_sum)
-
-    if params.SHOW_GRID_WORLD:
-        # calculate most likely action
-        most_likely_action = {}
-        for x in range(env.width):
-            for y in range(env.height):
-                state = (x, y)
-                best_action = None
-                best_prob = float('-inf')
-                for action, prob in policy_probs[state].items():
-                    if prob > best_prob:
-                        best_prob = prob
-                        best_action = action
-                most_likely_action[state] = best_action
-
-        env.render(None, most_likely_action, folder_path=str(project_root / "renders" / "sarsa_with_FA"),
-                    title=f'episodes={params.Q_LEARNING_EPISODES}, '
-                    +f'alpha={params.SARSA_ALPHA}, '
-                    +f'epsilon={params.SARSA_EPSILON}, '
-                    )
-        
-        plot_episode_stats(
-                episode_length, 
-                total_reward,
-                out_dir=str(project_root / "renders" / "sarsa_with_FA")
-            )
-        
-if __name__ == "__main__":
-    main()
+    sarsa_fa = SarsaWithFA(
+        env=env,
+        gamma=config["gamma"],
+        alpha=config["alpha"],
+        epsilon=config["epsilon"],
+    )
+    sarsa_fa.solve(
+        n_episodes=config["n_episodes"],
+        max_steps=config["max_steps"],
+        log_interval=config["log_interval"],
+    )
